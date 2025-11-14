@@ -2,21 +2,14 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { usePemancingan } from "../context/PemancingContext";
-
-interface CartItem {
-  packageId: number;
-  packageName: string;
-  quantity: number;
-  price: number;
-  stock: number;
-  duration: string;
-}
+import { usePemancingan, Package } from "../context/PemancingContext";
 
 export default function KasirPemancingPage() {
   const { packages, addTransaction } = usePemancingan();
-  const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedType, setSelectedType] = useState<string>("Semua");
+  const [showCheckoutModal, setShowCheckoutModal] = useState(false);
+  const [selectedPackage, setSelectedPackage] = useState<Package | null>(null);
+  const [orderQuantity, setOrderQuantity] = useState(1);
 
   const types = ["Semua", "Harian", "Jam", "Spesial", "Umpan", "Alat"];
 
@@ -24,80 +17,56 @@ export default function KasirPemancingPage() {
     ? packages 
     : packages.filter(p => p.type === selectedType);
 
-  const addToCart = (pkg: typeof packages[0]) => {
+  const handlePackageClick = (pkg: Package) => {
     if (pkg.stock === 0) {
       alert(`${pkg.name} stok habis!`);
       return;
     }
-
-    const existingItem = cart.find(item => item.packageId === pkg.id);
-    if (existingItem) {
-      if (existingItem.quantity >= pkg.stock) {
-        alert(`Stok ${pkg.name} tidak mencukupi!`);
-        return;
-      }
-      setCart(cart.map(item => 
-        item.packageId === pkg.id 
-          ? { ...item, quantity: item.quantity + 1 }
-          : item
-      ));
-    } else {
-      setCart([...cart, {
-        packageId: pkg.id,
-        packageName: pkg.name,
-        quantity: 1,
-        price: pkg.price,
-        stock: pkg.stock,
-        duration: pkg.duration
-      }]);
-    }
+    setSelectedPackage(pkg);
+    setOrderQuantity(1);
+    setShowCheckoutModal(true);
   };
 
-  const removeFromCart = (packageId: number) => {
-    const existingItem = cart.find(item => item.packageId === packageId);
-    if (existingItem && existingItem.quantity > 1) {
-      setCart(cart.map(item => 
-        item.packageId === packageId 
-          ? { ...item, quantity: item.quantity - 1 }
-          : item
-      ));
-    } else {
-      setCart(cart.filter(item => item.packageId !== packageId));
+  const handleQuantityChange = (change: number) => {
+    if (!selectedPackage) return;
+    
+    const newQuantity = orderQuantity + change;
+    if (newQuantity < 1) return;
+    if (newQuantity > selectedPackage.stock) {
+      alert(`Stok ${selectedPackage.name} hanya tersedia ${selectedPackage.stock}`);
+      return;
     }
-  };
-
-  const deleteFromCart = (packageId: number) => {
-    setCart(cart.filter(item => item.packageId !== packageId));
+    setOrderQuantity(newQuantity);
   };
 
   const calculateTotal = () => {
-    return cart.reduce((total, item) => total + (item.price * item.quantity), 0);
+    if (!selectedPackage) return 0;
+    return selectedPackage.price * orderQuantity;
   };
 
   const handleCheckout = () => {
-    if (cart.length === 0) {
-      alert("Keranjang kosong!");
-      return;
-    }
+    if (!selectedPackage) return;
     
     const total = calculateTotal();
     const confirmation = confirm(
-      `Total: Rp ${total.toLocaleString("id-ID")}\n\nKonfirmasi pembayaran?`
+      `Checkout:\n${selectedPackage.name} x ${orderQuantity}\nTotal: Rp ${total.toLocaleString("id-ID")}\n\nKonfirmasi pembayaran?`
     );
     
     if (confirmation) {
       addTransaction({
-        items: cart.map(item => ({
-          packageId: item.packageId,
-          packageName: item.packageName,
-          quantity: item.quantity,
-          price: item.price
-        })),
+        items: [{
+          packageId: selectedPackage.id,
+          packageName: selectedPackage.name,
+          quantity: orderQuantity,
+          price: selectedPackage.price
+        }],
         total: total
       });
       
       alert("Transaksi berhasil! Selamat memancing!");
-      setCart([]);
+      setShowCheckoutModal(false);
+      setSelectedPackage(null);
+      setOrderQuantity(1);
     }
   };
 
@@ -151,7 +120,7 @@ export default function KasirPemancingPage() {
                   className={`bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 hover:shadow-xl transition-shadow ${
                     pkg.stock > 0 ? 'cursor-pointer' : 'opacity-60'
                   }`}
-                  onClick={() => addToCart(pkg)}
+                  onClick={() => handlePackageClick(pkg)}
                 >
                   <div className="flex flex-col h-full">
                     <div className="flex-1">
@@ -187,95 +156,126 @@ export default function KasirPemancingPage() {
             </div>
           </div>
 
-          {/* Cart Section */}
+          {/* Info Section */}
           <div className="lg:col-span-1">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 sticky top-6">
               <h2 className="text-xl font-bold mb-4 text-gray-800 dark:text-white">
-                Keranjang Belanja
+                Informasi
               </h2>
-
-              {cart.length === 0 ? (
-                <p className="text-gray-500 dark:text-gray-400 text-center py-8">
-                  Keranjang kosong
+              <div className="text-center py-8">
+                <svg className="w-16 h-16 mx-auto mb-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p className="text-gray-600 dark:text-gray-400 text-sm">
+                  Klik paket untuk melakukan checkout
                 </p>
-              ) : (
-                <>
-                  <div className="space-y-3 mb-6 max-h-96 overflow-y-auto">
-                    {cart.map(item => (
-                      <div key={item.packageId} className="border-b dark:border-gray-700 pb-3">
-                        <div className="flex justify-between items-start mb-2">
-                          <div className="flex-1">
-                            <h4 className="font-medium text-gray-800 dark:text-white">
-                              {item.packageName}
-                            </h4>
-                            {item.duration !== "-" && (
-                              <p className="text-xs text-gray-500 dark:text-gray-400">
-                                {item.duration}
-                              </p>
-                            )}
-                            <p className="text-xs text-gray-500 dark:text-gray-400">
-                              Rp {item.price.toLocaleString("id-ID")} / item
-                            </p>
-                          </div>
-                          <button
-                            onClick={() => deleteFromCart(item.packageId)}
-                            className="text-red-500 hover:text-red-700"
-                          >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => removeFromCart(item.packageId)}
-                              className="w-7 h-7 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600"
-                            >
-                              -
-                            </button>
-                            <span className="w-8 text-center font-medium dark:text-white">
-                              {item.quantity}
-                            </span>
-                            <button
-                              onClick={() => {
-                                const pkg = packages.find(p => p.id === item.packageId);
-                                if (pkg) addToCart(pkg);
-                              }}
-                              className="w-7 h-7 bg-blue-500 text-white rounded hover:bg-blue-600"
-                            >
-                              +
-                            </button>
-                          </div>
-                          <p className="font-bold text-blue-600 dark:text-blue-400">
-                            Rp {(item.price * item.quantity).toLocaleString("id-ID")}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="border-t dark:border-gray-700 pt-4 mb-4">
-                    <div className="flex justify-between items-center text-xl font-bold">
-                      <span className="text-gray-800 dark:text-white">Total:</span>
-                      <span className="text-blue-600 dark:text-blue-400">
-                        Rp {calculateTotal().toLocaleString("id-ID")}
-                      </span>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={handleCheckout}
-                    className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-lg transition-colors"
-                  >
-                    Checkout
-                  </button>
-                </>
-              )}
+              </div>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Checkout Modal */}
+      {showCheckoutModal && selectedPackage && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-md w-full p-6">
+            <div className="flex justify-between items-start mb-4">
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white">
+                Checkout
+              </h3>
+              <button
+                onClick={() => {
+                  setShowCheckoutModal(false);
+                  setSelectedPackage(null);
+                  setOrderQuantity(1);
+                }}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="mb-6">
+              <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 mb-4">
+                <div className="flex justify-between items-start mb-2">
+                  <div className="flex-1">
+                    <h4 className="font-bold text-lg text-gray-900 dark:text-white">
+                      {selectedPackage.name}
+                    </h4>
+                    <div className="flex gap-2 mt-1">
+                      <span className="text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-1 rounded">
+                        {selectedPackage.type}
+                      </span>
+                      {selectedPackage.duration !== "-" && (
+                        <span className="text-xs bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 px-2 py-1 rounded">
+                          {selectedPackage.duration}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-blue-600 dark:text-blue-400 font-bold text-lg">
+                    Rp {selectedPackage.price.toLocaleString("id-ID")}
+                  </p>
+                </div>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+                  Stok tersedia: {selectedPackage.stock}
+                </p>
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Jumlah
+                </label>
+                <div className="flex items-center justify-center gap-4">
+                  <button
+                    onClick={() => handleQuantityChange(-1)}
+                    className="w-12 h-12 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 flex items-center justify-center text-xl font-bold"
+                  >
+                    -
+                  </button>
+                  <span className="text-3xl font-bold dark:text-white min-w-[60px] text-center">
+                    {orderQuantity}
+                  </span>
+                  <button
+                    onClick={() => handleQuantityChange(1)}
+                    className="w-12 h-12 bg-blue-500 text-white rounded-lg hover:bg-blue-600 flex items-center justify-center text-xl font-bold"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              <div className="border-t dark:border-gray-700 pt-4">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-gray-600 dark:text-gray-400">Harga satuan:</span>
+                  <span className="font-medium dark:text-white">
+                    Rp {selectedPackage.price.toLocaleString("id-ID")}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center mb-4">
+                  <span className="text-gray-600 dark:text-gray-400">Jumlah:</span>
+                  <span className="font-medium dark:text-white">{orderQuantity}</span>
+                </div>
+                <div className="flex justify-between items-center text-xl font-bold">
+                  <span className="text-gray-900 dark:text-white">Total:</span>
+                  <span className="text-blue-600 dark:text-blue-400">
+                    Rp {calculateTotal().toLocaleString("id-ID")}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={handleCheckout}
+              className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-lg transition-colors"
+            >
+              Konfirmasi Pembayaran
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

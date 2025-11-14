@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useWarung } from "../context/WarungContext";
+import { useWarung, Product } from "../context/WarungContext";
 
 interface CartItem {
   productId: number;
@@ -14,8 +14,10 @@ interface CartItem {
 
 export default function KasirPage() {
   const { products, addTransaction } = useWarung();
-  const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>("Semua");
+  const [showCheckoutModal, setShowCheckoutModal] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [orderQuantity, setOrderQuantity] = useState(1);
 
   const categories = ["Semua", "Makanan", "Minuman", "Snack"];
 
@@ -23,74 +25,56 @@ export default function KasirPage() {
     ? products 
     : products.filter(p => p.category === selectedCategory);
 
-  const addToCart = (product: typeof products[0]) => {
+  const handleProductClick = (product: Product) => {
     if (product.stock === 0) {
       alert(`${product.name} stok habis!`);
       return;
     }
-
-    const existingItem = cart.find(item => item.productId === product.id);
-    if (existingItem) {
-      if (existingItem.quantity >= product.stock) {
-        alert(`Stok ${product.name} tidak mencukupi!`);
-        return;
-      }
-      setCart(cart.map(item => 
-        item.productId === product.id 
-          ? { ...item, quantity: item.quantity + 1 }
-          : item
-      ));
-    } else {
-      setCart([...cart, {
-        productId: product.id,
-        productName: product.name,
-        quantity: 1,
-        price: product.price,
-        stock: product.stock
-      }]);
-    }
+    setSelectedProduct(product);
+    setOrderQuantity(1);
+    setShowCheckoutModal(true);
   };
 
-  const removeFromCart = (productId: number) => {
-    const existingItem = cart.find(item => item.productId === productId);
-    if (existingItem && existingItem.quantity > 1) {
-      setCart(cart.map(item => 
-        item.productId === productId 
-          ? { ...item, quantity: item.quantity - 1 }
-          : item
-      ));
-    } else {
-      setCart(cart.filter(item => item.productId !== productId));
+  const handleQuantityChange = (change: number) => {
+    if (!selectedProduct) return;
+    
+    const newQuantity = orderQuantity + change;
+    if (newQuantity < 1) return;
+    if (newQuantity > selectedProduct.stock) {
+      alert(`Stok ${selectedProduct.name} hanya tersedia ${selectedProduct.stock}`);
+      return;
     }
-  };
-
-  const deleteFromCart = (productId: number) => {
-    setCart(cart.filter(item => item.productId !== productId));
+    setOrderQuantity(newQuantity);
   };
 
   const calculateTotal = () => {
-    return cart.reduce((total, item) => total + (item.price * item.quantity), 0);
+    if (!selectedProduct) return 0;
+    return selectedProduct.price * orderQuantity;
   };
 
   const handleCheckout = () => {
-    if (cart.length === 0) {
-      alert("Keranjang kosong!");
-      return;
-    }
+    if (!selectedProduct) return;
     
     const total = calculateTotal();
     const confirmation = confirm(
-      `Total: Rp ${total.toLocaleString("id-ID")}\n\nKonfirmasi pembayaran?`
+      `Checkout:\n${selectedProduct.name} x ${orderQuantity}\nTotal: Rp ${total.toLocaleString("id-ID")}\n\nKonfirmasi pembayaran?`
     );
     
     if (confirmation) {
       addTransaction({
-        items: cart,
+        items: [{
+          productId: selectedProduct.id,
+          productName: selectedProduct.name,
+          quantity: orderQuantity,
+          price: selectedProduct.price
+        }],
         total: total
       });
       
       alert("Transaksi berhasil! Terima kasih.");
-      setCart([]);
+      setShowCheckoutModal(false);
+      setSelectedProduct(null);
+      setOrderQuantity(1);
     }
   };
 
@@ -144,7 +128,7 @@ export default function KasirPage() {
                   className={`bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 hover:shadow-xl transition-shadow ${
                     product.stock > 0 ? 'cursor-pointer' : 'opacity-60'
                   }`}
-                  onClick={() => addToCart(product)}
+                  onClick={() => handleProductClick(product)}
                 >
                   <div className="flex flex-col h-full">
                     <div className="flex-1">
@@ -175,90 +159,119 @@ export default function KasirPage() {
             </div>
           </div>
 
-          {/* Cart Section */}
+          {/* Info Section */}
           <div className="lg:col-span-1">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 sticky top-6">
               <h2 className="text-xl font-bold mb-4 text-gray-800 dark:text-white">
-                Keranjang Belanja
+                Informasi
               </h2>
-
-              {cart.length === 0 ? (
-                <p className="text-gray-500 dark:text-gray-400 text-center py-8">
-                  Keranjang kosong
+              <div className="text-center py-8">
+                <svg className="w-16 h-16 mx-auto mb-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p className="text-gray-600 dark:text-gray-400 text-sm">
+                  Klik produk untuk melakukan checkout
                 </p>
-              ) : (
-                <>
-                  <div className="space-y-3 mb-6 max-h-96 overflow-y-auto">
-                    {cart.map(item => (
-                      <div key={item.productId} className="border-b dark:border-gray-700 pb-3">
-                        <div className="flex justify-between items-start mb-2">
-                          <div className="flex-1">
-                            <h4 className="font-medium text-gray-800 dark:text-white">
-                              {item.productName}
-                            </h4>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">
-                              Rp {item.price.toLocaleString("id-ID")} / item
-                            </p>
-                          </div>
-                          <button
-                            onClick={() => deleteFromCart(item.productId)}
-                            className="text-red-500 hover:text-red-700"
-                          >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => removeFromCart(item.productId)}
-                              className="w-7 h-7 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600"
-                            >
-                              -
-                            </button>
-                            <span className="w-8 text-center font-medium dark:text-white">
-                              {item.quantity}
-                            </span>
-                            <button
-                              onClick={() => {
-                                const product = products.find(p => p.id === item.productId);
-                                if (product) addToCart(product);
-                              }}
-                              className="w-7 h-7 bg-orange-500 text-white rounded hover:bg-orange-600"
-                            >
-                              +
-                            </button>
-                          </div>
-                          <p className="font-bold text-orange-600 dark:text-orange-400">
-                            Rp {(item.price * item.quantity).toLocaleString("id-ID")}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="border-t dark:border-gray-700 pt-4 mb-4">
-                    <div className="flex justify-between items-center text-xl font-bold">
-                      <span className="text-gray-800 dark:text-white">Total:</span>
-                      <span className="text-orange-600 dark:text-orange-400">
-                        Rp {calculateTotal().toLocaleString("id-ID")}
-                      </span>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={handleCheckout}
-                    className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-6 rounded-lg transition-colors"
-                  >
-                    Checkout
-                  </button>
-                </>
-              )}
+              </div>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Checkout Modal */}
+      {showCheckoutModal && selectedProduct && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-md w-full p-6">
+            <div className="flex justify-between items-start mb-4">
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white">
+                Checkout
+              </h3>
+              <button
+                onClick={() => {
+                  setShowCheckoutModal(false);
+                  setSelectedProduct(null);
+                  setOrderQuantity(1);
+                }}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="mb-6">
+              <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 mb-4">
+                <div className="flex justify-between items-start mb-2">
+                  <div className="flex-1">
+                    <h4 className="font-bold text-lg text-gray-900 dark:text-white">
+                      {selectedProduct.name}
+                    </h4>
+                    <span className="text-xs bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200 px-2 py-1 rounded inline-block mt-1">
+                      {selectedProduct.category}
+                    </span>
+                  </div>
+                  <p className="text-orange-600 dark:text-orange-400 font-bold text-lg">
+                    Rp {selectedProduct.price.toLocaleString("id-ID")}
+                  </p>
+                </div>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+                  Stok tersedia: {selectedProduct.stock}
+                </p>
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Jumlah
+                </label>
+                <div className="flex items-center justify-center gap-4">
+                  <button
+                    onClick={() => handleQuantityChange(-1)}
+                    className="w-12 h-12 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 flex items-center justify-center text-xl font-bold"
+                  >
+                    -
+                  </button>
+                  <span className="text-3xl font-bold dark:text-white min-w-[60px] text-center">
+                    {orderQuantity}
+                  </span>
+                  <button
+                    onClick={() => handleQuantityChange(1)}
+                    className="w-12 h-12 bg-orange-500 text-white rounded-lg hover:bg-orange-600 flex items-center justify-center text-xl font-bold"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              <div className="border-t dark:border-gray-700 pt-4">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-gray-600 dark:text-gray-400">Harga satuan:</span>
+                  <span className="font-medium dark:text-white">
+                    Rp {selectedProduct.price.toLocaleString("id-ID")}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center mb-4">
+                  <span className="text-gray-600 dark:text-gray-400">Jumlah:</span>
+                  <span className="font-medium dark:text-white">{orderQuantity}</span>
+                </div>
+                <div className="flex justify-between items-center text-xl font-bold">
+                  <span className="text-gray-900 dark:text-white">Total:</span>
+                  <span className="text-orange-600 dark:text-orange-400">
+                    Rp {calculateTotal().toLocaleString("id-ID")}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={handleCheckout}
+              className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-6 rounded-lg transition-colors"
+            >
+              Konfirmasi Pembayaran
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
